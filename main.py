@@ -8,10 +8,9 @@ from data_fetcher import DataFetcher
 from logger import Database
 from news_filter import NewsFilter
 from scheduler import AurumScheduler
-from stats import bool format_stats, format_weekly
-: 
-from telegram_sender import TelegramSender   
-from tracker import SignalTracker return
+from stats import format_stats, format_weekly
+from telegram_sender import TelegramSender
+from tracker import SignalTracker
 from utils import market_is_open
 
 logger = logging.getLogger(__name__)
@@ -21,7 +20,8 @@ def setup_logging(l: str) -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("yfinance").setLevel(logging.WARNING)
 
-def auth(u: Update, s: Settings) -> bool(u.effective_chat and u.effective_chat.id == s.telegram_chat_id)
+def auth(u: Update, s: Settings) -> bool: 
+    return bool(u.effective_chat and u.effective_chat.id == s.telegram_chat_id)
 
 async def cmd_start(u: Update, c: ContextTypes.DEFAULT_TYPE) -> None:
     s = c.bot_data["settings"]

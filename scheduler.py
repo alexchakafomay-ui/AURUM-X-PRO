@@ -22,16 +22,22 @@ class AurumScheduler:
     def schedule(self, app: Application) -> None:
         jq, tz, days = app.job_queue, timezone.utc, tuple(range(5))
         
-        # 1. Sapaan Pagi (jam 06:55 UTC / 13:55 WIB)
-        jq.run_daily(self.greeting_job, time=time(hour=6, minute=55, tzinfo=tz), days=days)
+        # Kembali ke Jadwal Tetap (Sesuai Jam)
+        for h in self.s.session_hours_utc:
+            # Sapaan Pagi (Hanya di sesi pertama jam 07:00 UTC)
+            if h == self.s.session_hours_utc[0]:
+                jq.run_daily(self.greeting_job, time=time(hour=h-1, minute=55, tzinfo=tz), days=days)
+            
+            # Pre-alert (2 menit sebelum analisa)
+            jq.run_daily(self.pre_alert_job, time=time(hour=h-1, minute=58, tzinfo=tz), days=days)
+            
+            # Analisa Utama
+            jq.run_daily(self.analysis_job, time=time(hour=h, minute=0, tzinfo=tz), days=days)
         
-        # 2. Analisa Setiap 1 Jam (3600 detik)
-        jq.run_repeating(self.analysis_job, interval=3600, first=60)
-        
-        # 3. Tracker (Cek harga tiap 5 menit)
+        # Tracker (Cek harga TP/SL tiap 5 menit)
         jq.run_repeating(self.tracker_job, interval=300, first=30)
         
-        # 4. Weekend Detector (Tiap 6 jam)
+        # Weekend Detector
         jq.run_repeating(self.weekend_job, interval=21600, first=60)
 
     async def greeting_job(self, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -41,6 +47,10 @@ class AurumScheduler:
         await asyncio.to_thread(self.n.refresh)
         await self.snd.send_greeting(self.n.sentiment(), [e for e in self.n.upcoming(24) if e["impact"]=="High" and e["datetime_utc"].date()==utcnow().date()])
         self.db.set_state("greeted_date", td)
+
+    async def pre_alert_job(self, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        if market_is_open() and not self.db.is_paused():
+            await self.snd.send_prealert(self.db.get_state("last_bias", "Mixed"))
 
     async def analysis_job(self, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         if not market_is_open(): return
@@ -57,10 +67,9 @@ class AurumScheduler:
         if market_is_open(): await self.t.run()
 
     async def run_analysis(self) -> None:
-        # Cek kuota (max 6 sinyal sehari)
         ok, rsn = self.db.can_trade(self.s)
         if not ok:
-            logger.info(f"Analisa dilewati: {rsn}")
+            if self.s.send_no_signal: await self.snd.send_no_signal(rsn)
             return
             
         await asyncio.to_thread(self.n.refresh)
@@ -74,13 +83,15 @@ class AurumScheduler:
                 except Exception: logger.exception("Cand %s", p)
                 
         if not cds: 
-            logger.info("Tidak ada kandidat setup di jam ini.")
+            if self.s.send_no_signal: await self.snd.send_no_signal("Tidak ada konfluensi yang memenuhi standar.")
             return
             
         cds.sort(key=lambda x: x[0]["confidence"], reverse=True)
         slots = min(self.s.max_open_trades - self.db.open_trades_count(), self.s.max_signals_per_day - self.db.count_signals_today())
         
-        if slots <= 0: return
+        if slots <= 0: 
+            if self.s.send_no_signal: await self.snd.send_no_signal("Slot trade penuh.")
+            return
         
         sent = 0
         for c, sn, _ in cds[:slots]:
@@ -97,5 +108,5 @@ class AurumScheduler:
             sent += 1; 
             self.db.set_state("last_bias", c["direction"])
             
-        if sent > 0:
-            logger.info(f"Berhasil mengirim {sent} sinyal baru.")
+        if sent == 0 and self.s.send_no_signal:
+            await self.snd.send_no_signal("Semua kandidat ditolak oleh filter AI / Risk Manager.")

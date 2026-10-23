@@ -34,7 +34,9 @@ async def cmd_start(u: Update, c: ContextTypes.DEFAULT_TYPE) -> None:
     text += f"🟢 Pasar sedang <b>{status_pasar}</b>.\n"
     text += "Mode: <b>PAPER TRADING</b> (Aman).\n\n"
     text += "<b>📊 TRADING & ANALISA</b>\n"
-    text += "🔹 /stats — Laporan performa trading\n\n"
+    text += "🔹 /signal EURUSD — Minta analisa 1 pair\n"
+    text += "🔹 /stats — Laporan performa trading\n"
+    text += "🔹 /jadwal — Lihat jam analisa otomatis\n\n"
     text += "<b>📰 BERITA EKONOMI</b>\n"
     text += "🔹 /calendar — Jadwal rilis data\n"
     text += "🔹 /news — Radar berita high-impact\n\n"
@@ -43,6 +45,40 @@ async def cmd_start(u: Update, c: ContextTypes.DEFAULT_TYPE) -> None:
     text += "🔹 /resume — Bangunkan bot\n"
     text += "🔹 /status — Cek kesehatan bot\n\n"
     text += "<i>AURUM-X PRO siap mengawal trading Bos 24/5.</i> 🚀"
+    
+    await u.message.reply_text(text, parse_mode="HTML")
+
+async def cmd_signal(u: Update, c: ContextTypes.DEFAULT_TYPE) -> None:
+    s = c.bot_data["settings"]
+    if not auth(u, s): return
+    
+    if not c.args:
+        await u.message.reply_text("⚠️ <b>Format salah.</b>\nContoh: <code>/signal EURUSD</code>", parse_mode="HTML")
+        return
+        
+    pair = c.args[0].upper()
+    if pair not in s.watchlist:
+        await u.message.reply_text(f"⚠️ Pair <b>{pair}</b> tidak ada di watchlist Bos.", parse_mode="HTML")
+        return
+        
+    await u.message.reply_text(f"⏳ <b>Meminta analisa manual untuk {pair}...</b>", parse_mode="HTML")
+    res = await c.bot_data["scheduler"].manual_analysis(pair)
+    if res not in ("SIGNAL_SENT", "NO_SIGNAL"):
+        await u.message.reply_text(f"❌ {res}")
+
+async def cmd_jadwal(u: Update, c: ContextTypes.DEFAULT_TYPE) -> None:
+    s = c.bot_data["settings"]
+    if not auth(u, s): return
+    
+    text = "🗓️ <b>JADWAL ANALISA OTOMATIS</b>\n\n"
+    text += "Sistem akan memindai seluruh pasar secara otomatis pada jam:\n"
+    text += "1️⃣ <b>14:00 WIB</b> (Sesi London)\n"
+    text += "2️⃣ <b>18:00 WIB</b> (Overlap London-NY)\n"
+    text += "3️⃣ <b>22:00 WIB</b> (Sesi New York)\n"
+    text += "4️⃣ <b>02:00 WIB</b> (Sesi Tokyo)\n\n"
+    text += "⏱️ Di luar jam tersebut, bot hanya memantau harga TP/SL tiap 5 menit.\n\n"
+    text += "💡 Jika Bos ingin analisa di luar jam tersebut, gunakan perintah:\n"
+    text += "<code>/signal PAIR</code> (Contoh: /signal EURUSD)"
     
     await u.message.reply_text(text, parse_mode="HTML")
 
@@ -70,18 +106,31 @@ async def cmd_pause(u: Update, c: ContextTypes.DEFAULT_TYPE) -> None:
     s = c.bot_data["settings"]
     if not auth(u, s): return
     c.bot_data["db"].set_paused(True)
-    await u.message.reply_text("⏸ <b>AURUM-X PRO Dijeda.</b>\nSinyal baru tidak akan dikirim sampai /resume.", parse_mode="HTML")
+    await u.message.reply_text("⏸ <b>AURUM-X PRO Dijeda.</b>\nSinyal otomatis dihentikan.", parse_mode="HTML")
 
 async def cmd_resume(u: Update, c: ContextTypes.DEFAULT_TYPE) -> None:
     s = c.bot_data["settings"]
     if not auth(u, s): return
     c.bot_data["db"].set_paused(False)
-    await u.message.reply_text("▶️ <b>AURUM-X PRO Aktif Kembali.</b>\nSistem siap menganalisa pasar.", parse_mode="HTML")
+    await u.message.reply_text("▶️ <b>AURUM-X PRO Aktif Kembali.</b>", parse_mode="HTML")
 
 async def cmd_status(u: Update, c: ContextTypes.DEFAULT_TYPE) -> None:
     s, db = c.bot_data["settings"], c.bot_data["db"]
     if not auth(u, s): return
-    await u.message.reply_text(f"⚙️ <b>STATUS SISTEM</b>\n\nBot: <b>{'PAUSED' if db.is_paused() else 'ACTIVE'}</b>\nMarket: <b>{'BUKA' if market_is_open() else 'TUTUP'}</b>\nSinyal hari ini: <b>{db.count_signals_today()}</b> / {s.max_signals_per_day}\nOpen trade: <b>{db.open_trades_count()}</b> / {s.max_open_trades}", parse_mode="HTML")
+    
+    is_analyzing = db.get_state("is_analyzing", "0") == "1"
+    status_analisa = "🧠 <b>Sedang Menganalisa Pasar...</b>" if is_analyzing else "💤 Standby (Menunggu Jadwal)"
+    bot_status = "PAUSED" if db.is_paused() else "ACTIVE"
+    
+    text = f"⚙️ <b>STATUS SISTEM</b>\n\n"
+    text += f"Bot: <b>{bot_status}</b>\n"
+    text += f"Aktivitas: {status_analisa}\n"
+    text += f"Market: <b>{'BUKA' if market_is_open() else 'TUTUP'}</b>\n"
+    text += f"Sinyal hari ini: <b>{db.count_signals_today()}</b> / {s.max_signals_per_day}\n"
+    text += f"Open trade: <b>{db.open_trades_count()}</b> / {s.max_open_trades}\n\n"
+    text += "Gunakan /jadwal untuk melihat jam analisa."
+    
+    await u.message.reply_text(text, parse_mode="HTML")
 
 async def err_handler(u: object, c: ContextTypes.DEFAULT_TYPE) -> None: 
     logger.error("Error: %s", c.error)
@@ -108,9 +157,9 @@ def main() -> None:
     })
     
     for cmd, fn in [
-        ("start", cmd_start), ("stats", cmd_stats), 
-        ("weekly", cmd_weekly), ("calendar", cmd_calendar), ("news", cmd_news), 
-        ("pause", cmd_pause), ("resume", cmd_resume), ("status", cmd_status)
+        ("start", cmd_start), ("signal", cmd_signal), ("jadwal", cmd_jadwal), 
+        ("stats", cmd_stats), ("weekly", cmd_weekly), ("calendar", cmd_calendar), 
+        ("news", cmd_news), ("pause", cmd_pause), ("resume", cmd_resume), ("status", cmd_status)
     ]:
         app.add_handler(CommandHandler(cmd, fn))
         

@@ -1,56 +1,79 @@
-from __future__ import annotations
-import json, logging
-from datetime import timedelta
-from typing import Optional
-from config import Settings
-from utils import extract_json, utcnow
+import os
+import json
+import requests
+import logging
+
 logger = logging.getLogger(__name__)
-SYS_P = """Kamu adalah AURUM-X PRO, Hedge Fund Manager AI Institusional.
-Cari peluang Smart Money Concepts (Liquidity Sweep, FVG, OB).
-Debat: Agen Bull vs Agen Bear, diputuskan Risk Manager.
-Output JSON murni. Reasoning 4-6 kalimat narasi debat profesional."""
-USR_P = """Format JSON: {{"bot":"AURUM-X PRO","timestamp_utc":"","pair":"","direction":"BUY"|"SELL"|"NO_SIGNAL","confidence":0,"entry":0,"sl":0,"tp1":0,"tp2":0,"risk_reward_tp1":0,"risk_reward_tp2":0,"news_bias":"","news_score":{{"base":0,"quote":0}},"tf_alignment":{{}},"key_levels":{{"support":0,"resistance":0}},"reasoning":"Laporan Debat: ...","valid_until":"","risk_note":"Risiko 1-2%."}}
-SNAP: {s}
-CAND: {c}
-NEWS: {n}"""
-class AIAnalyzer:
-    def __init__(self, s: Settings): self.s = s
-    def _call(self, url: str, k: str, m: str, msgs: list) -> str:
-        from openai import OpenAI
-        cl = OpenAI(base_url=url, api_key=k, timeout=self.s.ai_timeout)
-        try: r = cl.chat.completions.create(model=m, messages=msgs, temperature=0.4, max_tokens=1500, response_format={"type": "json_object"})
-        except: r = cl.chat.completions.create(model=m, messages=msgs, temperature=0.4, max_tokens=1500)
-        return r.choices[0].message.content or ""
-    def analyze(self, c: dict, s: dict, n: dict) -> dict:
-        if c is None: return self.no_signal("-", "Tidak ada kandidat.")
-        p = USR_P.format(s=json.dumps(s)[:18000], c=json.dumps(c)[:4000], n=json.dumps(n)[:2000])
-        m = [{"role": "system", "content": SYS_P}, {"role": "user", "content": p}]; raw = ""
-        try:
-            if self.s.openrouter_api_key: raw = self._call("https://openrouter.ai/api/v1", self.s.openrouter_api_key, self.s.openrouter_model, m)
-            else: return self.fallback(c, n)
-        except Exception as e:
-            logger.warning("AI err: %s", e); return self.fallback(c, n)
-        pr = extract_json(raw)
-        if not pr: return self.fallback(c, n)
-        f = self.validate(pr, c, n)
-        return f if f else self.fallback(c, n)
-    def validate(self, d: dict, c: dict, n: dict) -> Optional[dict]:
-        dr = str(d.get("direction", "")).upper()
-        if dr == "NO_SIGNAL": return self.no_signal(c["pair"], str(d.get("reasoning", "AI NO_SIGNAL.")))
-        if dr not in {"BUY", "SELL"} or dr != c["direction"] or str(d.get("pair", "")).upper() != c["pair"]: return None
-        try: e, s, t1, t2 = float(d["entry"]), float(d["sl"]), float(d["tp1"]), float(d["tp2"]); cf = int(d.get("confidence", 0))
-        except: return None
-        if dr == "BUY" and not (s < e < t1 < t2): return None
-        if dr == "SELL" and not (t2 < t1 < e < s): return None
-        rk = abs(e - s)
-        if rk <= 0: return None
-        r1, r2 = abs(t1 - e) / rk, abs(t2 - e) / rk
-        if r1 < 1.2 or r2 < 2.5 or cf < 65: return None
-        nw = utcnow()
-        return {"bot": "AURUM-X PRO", "timestamp_utc": nw.isoformat(), "pair": c["pair"], "direction": dr, "confidence": min(98, cf), "entry": e, "sl": s, "tp1": t1, "tp2": t2, "risk_reward_tp1": round(r1, 2), "risk_reward_tp2": round(r2, 2), "news_bias": d.get("news_bias", n.get("news_bias", "Neutral")), "news_score": d.get("news_score", {"base": n.get("base_score", 50), "quote": n.get("quote_score", 50)}), "tf_alignment": d.get("tf_alignment", c["tf_alignment"]), "key_levels": d.get("key_levels", c["key_levels"]), "reasoning": str(d.get("reasoning", c["reasoning"]))[:1500], "valid_until": (nw + timedelta(hours=self.s.signal_valid_hours)).isoformat(), "risk_note": "Risiko 1-2% per trade."}
-    def fallback(self, c: dict, n: dict) -> dict:
-        nw = utcnow()
-        return {"bot": "AURUM-X PRO", "timestamp_utc": nw.isoformat(), "pair": c["pair"], "direction": c["direction"], "confidence": min(80, int(c["confidence"])), "entry": float(c["entry"]), "sl": float(c["sl"]), "tp1": float(c["tp1"]), "tp2": float(c["tp2"]), "risk_reward_tp1": float(c["risk_reward_tp1"]), "risk_reward_tp2": float(c["risk_reward_tp2"]), "news_bias": n.get("news_bias", "Neutral"), "news_score": {"base": n.get("base_score", 50), "quote": n.get("quote_score", 50)}, "tf_alignment": c["tf_alignment"], "key_levels": c["key_levels"], "reasoning": "Fallback: " + c["reasoning"], "valid_until": (nw + timedelta(hours=self.s.signal_valid_hours)).isoformat(), "risk_note": "Risiko 1-2% per trade."}
-    @staticmethod
-    def no_signal(p: str, r: str) -> dict:
-        n = utcnow(); return {"bot": "AURUM-X PRO", "timestamp_utc": n.isoformat(), "pair": p, "direction": "NO_SIGNAL", "confidence": 0, "entry": None, "sl": None, "tp1": None, "tp2": None, "risk_reward_tp1": None, "risk_reward_tp2": None, "news_bias": "Neutral", "news_score": {"base": 50, "quote": 50}, "tf_alignment": {}, "key_levels": {}, "reasoning": r[:1500], "valid_until": n.isoformat(), "risk_note": "Risiko 1-2%."}
+
+def analyze_market_with_ai(ticker, price_data, indicator_results):
+    """
+    Mengirimkan metrik pasar tingkat institusi ke Gemini via OpenRouter untuk analisis multi-dimensi.
+    """
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    model_name = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-exp:free")
+
+    if not api_key:
+        return {
+            "decision": "WAIT",
+            "entry": "-",
+            "stop_loss": "-",
+            "take_profit": "-",
+            "reasoning": ["API Key OpenRouter tidak ditemukan di sistem."]
+        }
+
+    prompt = f"""[SISTEM ANALISIS TRADING INSTITUSIONAL - CODENAME AURUM]
+Anda adalah AI Quant Strategist Senior di Wall Street. Tugas Anda adalah memberikan keputusan trading dengan tingkat akurasi di atas 92% untuk {ticker}.
+
+METRIK INTEGRASI PASAR:
+- Harga Terakhir: {indicator_results.get('current_price')}
+- Tren Dominan (Double EMA): {indicator_results.get('trend_ema')}
+- RSI (14) & Status: {indicator_results.get('rsi')} ({indicator_results.get('rsi_status')})
+- Volatilitas Pasar (ATR): {indicator_results.get('atr')}
+- Bollinger Bands Upper: {indicator_results.get('bollinger_upper')}
+- Bollinger Bands Lower: {indicator_results.get('bollinger_lower')}
+- Pivot Support 1 / Resistance 1: {indicator_results.get('support')} / {indicator_results.get('resistance')}
+- Pivot Support 2 / Resistance 2: {indicator_results.get('support_2')} / {indicator_results.get('resistance_2')}
+- Level Golden Ratio Fibo (61.8%): {indicator_results.get('fibo', {}).get('fibo_618')}
+- Sinyal Transaksi Bandar (VSA): {indicator_results.get('vsa_signal')}
+
+ATURAN KETAT AKURASI:
+1. BUY hanya jika harga mendekati Support/Fibo 61.8%/Lower Band DAN Tren bersifat BULLISH atau terjadi jenuh jual (Oversold).
+2. SELL hanya jika harga mendekati Resistance/Upper Band DAN Tren bersifat BEARISH atau terjadi jenuh beli (Overbought).
+3. Jika tidak ada konfluensi indikator yang jelas, pilih WAIT.
+
+Keluarkan output dalam format JSON murni TANPA markdown wrapper (jangan gunakan ```json):
+{{
+  "decision": "BUY/SELL/WAIT",
+  "entry": "angka_harga",
+  "stop_loss": "angka_harga",
+  "take_profit": "angka_harga",
+  "reasoning": ["alasan strategis 1", "alasan strategis 2", "alasan strategis 3"]
+}}
+"""
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": model_name,
+        "messages": [{"role": "user", "content": prompt}]
+    }
+
+    try:
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+        if response.status_code == 200:
+            content = response.json()['choices'][0]['message']['content'].strip()
+            # Membersihkan jika AI tetap mengembalikan markdown
+            if content.startswith("```"):
+                content = content.replace("```json", "").replace("```", "").strip()
+            return json.loads(content)
+        else:
+            return {"decision": "WAIT", "entry": "-", "stop_loss": "-", "take_profit": "-", "reasoning": [f"Error API: {response.text}"]}
+    except Exception as e:
+        return {"decision": "WAIT", "entry": "-", "stop_loss": "-", "take_profit": "-", "reasoning": [f"Koneksi terganggu: {str(e)}"]}

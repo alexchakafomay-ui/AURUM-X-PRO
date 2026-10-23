@@ -8,8 +8,8 @@ def rsi(s: pd.Series, p: int = 14) -> pd.Series:
     d = s.diff(); g = d.clip(lower=0); l = -d.clip(upper=0)
     ag, al = g.ewm(alpha=1/p, adjust=False).mean(), l.ewm(alpha=1/p, adjust=False).mean()
     return 100 - (100 / (1 + ag / al.replace(0, np.nan)))
-def macd(s: pd.Series, f: int = 12, sl: int = 26, sig: int = 9):
-    l = ema(s, f) - ema(s, sl); s_line = ema(l, sig); return l, s_line, l - s_line
+def macd)(s: pd.Series, f: int = 12, sl: - int = 26, sig: em int = 9):
+    l = emaa(s, f(s, sl); s_line = ema(l, sig); return l, s_line, l - s_line
 def atr(df: pd.DataFrame, p: int = 14) -> pd.Series:
     tr = pd.concat([df["high"] - df["low"], (df["high"] - df["close"].shift()).abs(), (df["low"] - df["close"].shift()).abs()], axis=1).max(axis=1)
     return tr.ewm(alpha=1/p, adjust=False).mean()

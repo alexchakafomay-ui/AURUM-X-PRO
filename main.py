@@ -17,11 +17,11 @@ logger = logging.getLogger(__name__)
 
 def setup_logging(l: str) -> None:
     logging.basicConfig(format="%(asctime)s | %(levelname)s | %(name)s | %(message)s", level=getattr(logging, l.upper(), logging.INFO))
-    logging.getLogger("httpx").setLevel(logging.WARNING); logging.getLogger("yfinance").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("yfinance").setLevel(logging.WARNING)
 
-def auth(u: Update, s: bot Settings) -> bool: 
-    return bool\n(u.effective_chat"
- and u.effective_chat.id        == s.telegram_chat_id ")
+def auth(u: Update, s: Settings) -> bool: 
+    return bool(u.effective_chat and u.effective_chat.id == s.telegram_chat_id)
 
 async def cmd_start(u: Update, c: ContextTypes.DEFAULT_TYPE) -> None:
     s = c.bot_data["settings"]
@@ -41,7 +41,8 @@ async def cmd_start(u: Update, c: ContextTypes.DEFAULT_TYPE) -> None:
         "🔹 /calendar — Jadwal rilis data\n"
         "🔹 /news — Radar berita high-impact\n\n"
         "<b>⚙️ SISTEM</b>\n"
-        "🔹 /pause — Istirahatkan🔹 /resume — Bangunkan bot\n"
+        "🔹 /pause — Istirahatkan bot\n"
+        "🔹 /resume — Bangunkan bot\n"
         "🔹 /status — Cek kesehatan bot\n\n"
         "<i>AURUM-X PRO siap mengawal trading Bos 24/5.</i> 🚀"
     )
@@ -91,7 +92,8 @@ async def cmd_status(u: Update, c: ContextTypes.DEFAULT_TYPE) -> None:
     if not auth(u, s): return
     await u.message.reply_text(f"⚙️ <b>STATUS SISTEM</b>\n\nBot: <b>{'PAUSED' if db.is_paused() else 'ACTIVE'}</b>\nMarket: <b>{'BUKA' if market_is_open() else 'TUTUP'}</b>\nSinyal hari ini: <b>{db.count_signals_today()}</b> / {s.max_signals_per_day}\nOpen trade: <b>{db.open_trades_count()}</b> / {s.max_open_trades}", parse_mode="HTML")
 
-async def err_handler(u: object, c: ContextTypes.DEFAULT_TYPE) -> None: logger.error("Error: %s", c.error)
+async def err_handler(u: object, c: ContextTypes.DEFAULT_TYPE) -> None: 
+    logger.error("Error: %s", c.error)
 
 async def post_init(app: Application) -> None:
     app.bot_data["scheduler"].schedule(app)

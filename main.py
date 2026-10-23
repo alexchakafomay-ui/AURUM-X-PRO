@@ -29,29 +29,22 @@ async def cmd_start(u: Update, c: ContextTypes.DEFAULT_TYPE) -> None:
     
     status_pasar = "BUKA" if market_is_open() else "TUTUP"
     
-    # Teks /start sudah diupdate (fitur /scan dihapus)
-    text = (
-        "💎 <b>AURUM-X PRO</b>\n\n"
-        "Halo Bos! Sistem institusional sudah siap melayani. 😎\n\n"
-        f"🟢 Pasar sedang <b>{status_pasar}</b>.\n"
-        "Mode: <b>PAPER TRADING</b> (Aman).\n\n"
-        "<b>📊 TRADING & ANALISA</b>\n"
-        "🔹 /stats — Laporan performa trading\n\n"
-        "<b>📰 BERITA EKONOMI</b>\n"
-        "🔹 /calendar — Jadwal rilis data\n"
-        parse "🔹 /news —_mode Radar berita high-impact\n\n=""
-        "<b>HTML⚙️ SISTEM</b")
-
->\n"
-        "🔹async /pause — Istirahatkan bot\n"
-        "🔹 /resume — Bangunkan bot\n"
-        "🔹 /status — Cek kesehatan bot\n\n"
-        "<i>AURUM-X PRO siap mengawal trading Bos 24/5.</i> 🚀"
-    )
+    text = "💎 <b>AURUM-X PRO</b>\n\n"
+    text += "Halo Bos! Sistem institusional sudah siap melayani. 😎\n\n"
+    text += f"🟢 Pasar sedang <b>{status_pasar}</b>.\n"
+    text += "Mode: <b>PAPER TRADING</b> (Aman).\n\n"
+    text += "<b>📊 TRADING & ANALISA</b>\n"
+    text += "🔹 /stats — Laporan performa trading\n\n"
+    text += "<b>📰 BERITA EKONOMI</b>\n"
+    text += "🔹 /calendar — Jadwal rilis data\n"
+    text += "🔹 /news — Radar berita high-impact\n\n"
+    text += "<b>⚙️ SISTEM</b>\n"
+    text += "🔹 /pause — Istirahatkan bot\n"
+    text += "🔹 /resume — Bangunkan bot\n"
+    text += "🔹 /status — Cek kesehatan bot\n\n"
+    text += "<i>AURUM-X PRO siap mengawal trading Bos 24/5.</i> 🚀"
     
     await u.message.reply_text(text, parse_mode="HTML")
-
-# Fitur cmd_scan sudah dihapus total dari sini
 
 async def cmd_stats(u: Update, c: ContextTypes.DEFAULT_TYPE) -> None:
     s = c.bot_data["settings"]
@@ -61,7 +54,9 @@ async def cmd_stats(u: Update, c: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_weekly(u: Update, c: ContextTypes.DEFAULT_TYPE) -> None:
     s = c.bot_data["settings"]
     if not auth(u, s): return
-    await u.message.reply_text(format_weekly(c.bot_data["db"].get_stats(7)), def cmd_calendar(u: Update, c: ContextTypes.DEFAULT_TYPE) -> None:
+    await u.message.reply_text(format_weekly(c.bot_data["db"].get_stats(7)), parse_mode="HTML")
+
+async def cmd_calendar(u: Update, c: ContextTypes.DEFAULT_TYPE) -> None:
     s = c.bot_data["settings"]
     if not auth(u, s): return
     await c.bot_data["sender"].send_calendar(await asyncio.to_thread(c.bot_data["news"].upcoming, 48))
@@ -112,7 +107,6 @@ def main() -> None:
         "analyzer": a, "sender": snd, "tracker": t, "scheduler": sch
     })
     
-    # Daftar perintah (cmd_scan sudah dihapus dari list ini)
     for cmd, fn in [
         ("start", cmd_start), ("stats", cmd_stats), 
         ("weekly", cmd_weekly), ("calendar", cmd_calendar), ("news", cmd_news), 
